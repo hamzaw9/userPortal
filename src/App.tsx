@@ -1,7 +1,10 @@
-function App() {
+import { AuthPage } from './pages/AuthPage'
 
+const App = () => {
   return (
-    <h1 className="text-center text-3xl text-teal-600">User Portal</h1>
+    <div className='h-screen'>
+      <AuthPage />
+    </div>
   )
 }
 
