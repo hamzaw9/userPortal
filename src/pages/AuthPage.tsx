@@ -1,60 +1,16 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import * as yup from "yup";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 
-type FormData = {
-  email: string;
-  password: string;
-  dob?: string;
-};
+import {
+  signupSchema,
+  loginSchema,
+  type SignupFormData,
+  type LoginFormData,
+} from "../schemas/auth.schema";
 
-// YUP SCHEMA
-
-const signupSchema = yup.object({
-  email: yup
-    .string()
-    .required("Email is required")
-    .email("Enter valid email"),
-
-  password: yup
-    .string()
-    .required("Password is required")
-    .matches(
-      /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&]).{8,}$/,
-      "Password must be 8+ chars, include letter, number & special char",
-    ),
-
-  dob: yup
-    .string()
-    .required("Date of birth is required")
-    .test("age-check", "You must be at least 18 years old", (value) => {
-        console.log(value)
-      if (!value) return false;
-
-      const dob = new Date(value);
-      const today = new Date();
-
-      let age = today.getFullYear() - dob.getFullYear();
-      const m = today.getMonth() - dob.getMonth();
-
-      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
-        age--;
-      }
-
-      return age >= 18;
-    }),
-});
-
-const loginSchema = yup.object({
-  email: yup
-    .string()
-    .required("Email is required")
-    .email("Enter valid email"),
-
-  password: yup.string().required("Password is required"),
-});
-
+/* Union type because form switches */
+type AuthFormData = SignupFormData | LoginFormData;
 
 export const AuthPage = () => {
   const [isSignup, setIsSignup] = useState(true);
@@ -63,19 +19,21 @@ export const AuthPage = () => {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<FormData>({
+  } = useForm<AuthFormData>({
     resolver: yupResolver(isSignup ? signupSchema : loginSchema),
   });
 
-  const onSubmit = (data: FormData) => {
-    const existingUsers: any[] = JSON.parse(
+  const onSubmit = (data: AuthFormData) => {
+    const existingUsers: SignupFormData[] = JSON.parse(
       localStorage.getItem("userData") || "[]",
     );
 
     // SIGNUP
     if (isSignup) {
+      const signupData = data as SignupFormData;
+
       const userExists = existingUsers.find(
-        (user) => user.email === data.email,
+        (user) => user.email === signupData.email,
       );
 
       if (userExists) {
@@ -83,7 +41,7 @@ export const AuthPage = () => {
         return;
       }
 
-      existingUsers.push(data);
+      existingUsers.push(signupData);
       localStorage.setItem("userData", JSON.stringify(existingUsers));
 
       alert("Signup successful!");
@@ -91,8 +49,10 @@ export const AuthPage = () => {
 
     // LOGIN
     else {
+      const loginData = data as LoginFormData;
+
       const user = existingUsers.find(
-        (u) => u.email === data.email && u.password === data.password,
+        (u) => u.email === loginData.email && u.password === loginData.password,
       );
 
       if (!user) {
@@ -111,7 +71,11 @@ export const AuthPage = () => {
           {isSignup ? "Sign Up" : "Login"}
         </h2>
 
-        <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+        <form
+          className="space-y-4"
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+        >
           {/* Email */}
           <div>
             <label className="block text-sm mb-1">Email</label>
@@ -121,9 +85,7 @@ export const AuthPage = () => {
               {...register("email")}
             />
             {errors.email && (
-              <p className="text-red-500 text-sm">
-                {errors.email.message}
-              </p>
+              <p className="text-red-500 text-sm">{errors.email.message}</p>
             )}
           </div>
 
@@ -136,13 +98,11 @@ export const AuthPage = () => {
               {...register("password")}
             />
             {errors.password && (
-              <p className="text-red-500 text-sm">
-                {errors.password.message}
-              </p>
+              <p className="text-red-500 text-sm">{errors.password.message}</p>
             )}
           </div>
 
-          {/* DOB */}
+          {/* DOB (Only for Signup) */}
           {isSignup && (
             <div>
               <label className="block text-sm mb-1">Date of Birth</label>
@@ -151,9 +111,9 @@ export const AuthPage = () => {
                 className="w-full border rounded-lg px-3 py-2"
                 {...register("dob")}
               />
-              {errors.dob && (
+              {(errors as FieldErrors<SignupFormData>).dob && (
                 <p className="text-red-500 text-sm">
-                  {errors.dob.message}
+                  {(errors as FieldErrors<SignupFormData>).dob?.message}
                 </p>
               )}
             </div>
