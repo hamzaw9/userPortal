@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useForm, type FieldErrors } from "react-hook-form";
+import { useState, useEffect } from "react";
+import { useForm, type SubmitHandler } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
+import { useNavigate } from "react-router-dom";
 
 import {
   signupSchema,
@@ -9,60 +10,149 @@ import {
   type LoginFormData,
 } from "../schemas/auth.schema";
 
-/* Union type because form switches */
-type AuthFormData = SignupFormData | LoginFormData;
+interface AuthPageProps {
+  showOnlyNameFields?: boolean;
+  onLogin?: () => void;
+  onNameSaved?: () => void;
+}
 
-export const AuthPage = () => {
+// Dashboard-only type
+type NameFormData = {
+  firstName: string;
+  lastName: string;
+};
+
+// Full auth type
+type CurrentForm = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  password?: string;
+  dob?: string;
+};
+
+
+export const AuthPage = ({ showOnlyNameFields = false, onLogin, onNameSaved }: AuthPageProps) => {
   const [isSignup, setIsSignup] = useState(true);
+  const navigate = useNavigate();
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
-  } = useForm<AuthFormData>({
-    resolver: yupResolver(isSignup ? signupSchema : loginSchema),
+    reset,
+  } = useForm<CurrentForm>({
+    resolver: yupResolver(
+      (showOnlyNameFields
+        ? signupSchema.pick(["firstName", "lastName"])
+        : isSignup
+        ? signupSchema.omit(["firstName", "lastName"])
+        : loginSchema) as any
+    ),
   });
 
-  const onSubmit = (data: AuthFormData) => {
+  // Prefill dashboard names from userData
+  useEffect(() => {
+    if (showOnlyNameFields) {
+      const email = localStorage.getItem("loggedInEmail") || "";
+      const users: SignupFormData[] = JSON.parse(
+        localStorage.getItem("userData") || "[]"
+      );
+      const user = users.find((u) => u.email === email);
+      setValue("firstName", user?.firstName ?? "");
+      setValue("lastName", user?.lastName ?? "");
+    }
+  }, [showOnlyNameFields, setValue]);
+
+  const onSubmit: SubmitHandler<CurrentForm> = (data) => {
+    if (showOnlyNameFields) {
+      // Dashboard: save names into the user's record inside userData
+      const { firstName, lastName } = data as NameFormData;
+      const email = localStorage.getItem("loggedInEmail") || "";
+      const users: SignupFormData[] = JSON.parse(
+        localStorage.getItem("userData") || "[]"
+      );
+      const updatedUsers = users.map((u) =>
+        u.email === email ? { ...u, firstName, lastName } : u
+      );
+      localStorage.setItem("userData", JSON.stringify(updatedUsers));
+      onNameSaved?.();
+      return;
+    }
+
     const existingUsers: SignupFormData[] = JSON.parse(
-      localStorage.getItem("userData") || "[]",
+      localStorage.getItem("userData") || "[]"
     );
 
-    // SIGNUP
     if (isSignup) {
       const signupData = data as SignupFormData;
-
-      const userExists = existingUsers.find(
-        (user) => user.email === signupData.email,
-      );
-
-      if (userExists) {
+      if (existingUsers.find((u) => u.email === signupData.email)) {
         alert("Email already exists");
+        reset();
         return;
       }
-
       existingUsers.push(signupData);
       localStorage.setItem("userData", JSON.stringify(existingUsers));
 
-      alert("Signup successful!");
-    }
-
-    // LOGIN
-    else {
+      alert("Signup successful! Please log in.");
+      reset();
+      setIsSignup(false);
+    } else {
       const loginData = data as LoginFormData;
-
       const user = existingUsers.find(
-        (u) => u.email === loginData.email && u.password === loginData.password,
+        (u) => u.email === loginData.email && u.password === loginData.password
       );
-
       if (!user) {
         alert("Invalid email or password");
         return;
       }
 
-      alert("Login successful!");
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("loggedInEmail", user.email);
+
+      onLogin?.();
+      navigate("/dashboard");
     }
   };
+
+  // Dashboard embed: render bare form only, no wrapper
+  if (showOnlyNameFields) {
+    return (
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">First Name</label>
+          <input
+            type="text"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            placeholder="Enter your first name"
+            {...register("firstName")}
+          />
+          {errors.firstName?.message && (
+            <p className="text-red-500 text-sm mt-1">{errors.firstName.message}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Last Name</label>
+          <input
+            type="text"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            placeholder="Enter your last name"
+            {...register("lastName")}
+          />
+          {errors.lastName?.message && (
+            <p className="text-red-500 text-sm mt-1">{errors.lastName.message}</p>
+          )}
+        </div>
+        <button
+          type="submit"
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg font-medium transition-colors"
+        >
+          Save Name
+        </button>
+      </form>
+    );
+  }
 
   return (
     <div className="h-full flex items-center justify-center bg-gray-100">
@@ -71,11 +161,7 @@ export const AuthPage = () => {
           {isSignup ? "Sign Up" : "Login"}
         </h2>
 
-        <form
-          className="space-y-4"
-          onSubmit={handleSubmit(onSubmit)}
-          noValidate
-        >
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           {/* Email */}
           <div>
             <label className="block text-sm mb-1">Email</label>
@@ -84,7 +170,7 @@ export const AuthPage = () => {
               className="w-full border rounded-lg px-3 py-2"
               {...register("email")}
             />
-            {errors.email && (
+            {errors.email?.message && (
               <p className="text-red-500 text-sm">{errors.email.message}</p>
             )}
           </div>
@@ -97,12 +183,12 @@ export const AuthPage = () => {
               className="w-full border rounded-lg px-3 py-2"
               {...register("password")}
             />
-            {errors.password && (
+            {errors.password?.message && (
               <p className="text-red-500 text-sm">{errors.password.message}</p>
             )}
           </div>
 
-          {/* DOB (Only for Signup) */}
+          {/* DOB — signup only */}
           {isSignup && (
             <div>
               <label className="block text-sm mb-1">Date of Birth</label>
@@ -111,31 +197,30 @@ export const AuthPage = () => {
                 className="w-full border rounded-lg px-3 py-2"
                 {...register("dob")}
               />
-              {(errors as FieldErrors<SignupFormData>).dob && (
-                <p className="text-red-500 text-sm">
-                  {(errors as FieldErrors<SignupFormData>).dob?.message}
-                </p>
+              {errors.dob?.message && (
+                <p className="text-red-500 text-sm">{errors.dob.message}</p>
               )}
             </div>
           )}
 
           <button
             type="submit"
-            className="w-full bg-blue-500 text-white py-2 rounded-lg"
+            className="w-full bg-blue-500 text-white py-2 rounded-lg cursor-pointer"
           >
             {isSignup ? "Sign Up" : "Login"}
           </button>
-        </form>
 
-        <p className="text-sm text-center mt-4">
-          {isSignup ? "Already have an account?" : "Don't have an account?"}
-          <button
-            onClick={() => setIsSignup(!isSignup)}
-            className="ml-2 text-blue-500 font-medium"
-          >
-            {isSignup ? "Login" : "Sign Up"}
-          </button>
-        </p>
+          <p className="text-sm text-center mt-4">
+            {isSignup ? "Already have an account?" : "Don't have an account?"}
+            <button
+              type="button"
+              onClick={() => setIsSignup(!isSignup)}
+              className="ml-2 text-blue-500 font-medium cursor-pointer"
+            >
+              {isSignup ? "Login" : "Sign Up"}
+            </button>
+          </p>
+        </form>
       </div>
     </div>
   );
